@@ -92,7 +92,8 @@ export default function Login() {
           </div>
 
           <a
-            href="http://localhost:5000/api/auth/google"
+            // href="http://localhost:5000/api/auth/google"
+            href="https://ai-resume-analyzer-api-93tn.onrender.com/api/auth/google/callback"
             className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-100 text-gray-900 font-semibold py-3 rounded-lg transition"
           >
             <img
