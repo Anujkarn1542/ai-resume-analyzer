@@ -10,7 +10,6 @@ import {
 } from "recharts";
 
 export default function HistoryList({ history, onSelect }) {
-  // Prepare chart data
   const chartData = [...history].reverse().map((item, i) => ({
     name: `#${i + 1}`,
     score: item.score,
@@ -21,17 +20,23 @@ export default function HistoryList({ history, onSelect }) {
     <div className="space-y-6">
       {/* Score Chart */}
       {history.length > 1 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-white font-semibold mb-4">📈 Score Progress</h3>
+        <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 transition-colors duration-300">
+          <h3 className="text-gray-900 dark:text-white font-semibold mb-4">
+            📈 Score Progress
+          </h3>
+
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+
               <XAxis dataKey="name" stroke="#9ca3af" tick={{ fontSize: 12 }} />
+
               <YAxis
                 domain={[0, 100]}
                 stroke="#9ca3af"
                 tick={{ fontSize: 12 }}
               />
+
               <Tooltip
                 contentStyle={{
                   backgroundColor: "#111827",
@@ -41,12 +46,17 @@ export default function HistoryList({ history, onSelect }) {
                 labelStyle={{ color: "#fff" }}
                 itemStyle={{ color: "#a855f7" }}
               />
+
               <Line
                 type="monotone"
                 dataKey="score"
                 stroke="#a855f7"
                 strokeWidth={2}
-                dot={{ fill: "#a855f7", strokeWidth: 2, r: 4 }}
+                dot={{
+                  fill: "#a855f7",
+                  strokeWidth: 2,
+                  r: 4,
+                }}
                 activeDot={{ r: 6 }}
               />
             </LineChart>
@@ -63,14 +73,18 @@ export default function HistoryList({ history, onSelect }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
             onClick={() => onSelect(item)}
-            className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex justify-between items-center cursor-pointer hover:border-purple-500 transition"
+            className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 flex justify-between items-center cursor-pointer hover:border-purple-500 transition-colors duration-300"
           >
             <div>
-              <p className="text-white font-medium text-sm">{item.fileName}</p>
-              <p className="text-gray-400 text-xs mt-1">
+              <p className="text-gray-900 dark:text-white font-medium text-sm">
+                {item.fileName}
+              </p>
+
+              <p className="text-gray-600 dark:text-gray-400 text-xs mt-1">
                 {item.jobRole} • {new Date(item.createdAt).toLocaleDateString()}
               </p>
             </div>
+
             <div className="text-right">
               <p
                 className={`text-2xl font-black ${
@@ -83,6 +97,7 @@ export default function HistoryList({ history, onSelect }) {
               >
                 {item.score}
               </p>
+
               <p
                 className={`text-xs ${
                   item.label === "Strong"
