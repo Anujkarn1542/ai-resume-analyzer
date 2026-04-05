@@ -1,10 +1,9 @@
 @import "tailwindcss";
-:root {
-  color-scheme: light dark;
-}
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 body {
-  @apply transition-colors duration-300;
+  @apply transition-colors duration-300 bg-white text-black;
 }
 
 .dark body {
