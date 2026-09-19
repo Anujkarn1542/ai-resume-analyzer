@@ -11,6 +11,8 @@ import InterviewQuestions from "../components/InterviewQuestions.jsx";
 import ImprovedBullets from "../components/ImprovedBullets.jsx";
 import { exportToPDF } from "../utils/exportPDF.js";
 import { motion } from "framer-motion";
+import { toast } from "../components/Toast";
+
 
 export default function Dashboard() {
   const [file, setFile] = useState(null);
@@ -132,9 +134,12 @@ export default function Dashboard() {
                     await axios.post("/features/send-email", {
                       analysisId: result._id,
                     });
-                    alert("✅ Report sent to your email!");
-                  } catch {
-                    alert("❌ Email sending failed!");
+
+                    toast.success("Report sent to your email!");
+                  } catch (err) {
+                    toast.error(
+                      err.response?.data?.message || "Email sending failed!",
+                    );
                   }
                 }}
                 className="bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/30 text-blue-400 px-4 py-2 rounded-lg text-sm transition"

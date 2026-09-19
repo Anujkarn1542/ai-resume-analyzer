@@ -2,33 +2,96 @@ import "../config.js";
 import express from "express";
 import multer from "multer";
 import fs from "fs";
+import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { protect } from "../middleware/authMiddleware.js";
 import Analysis from "../models/Analysis.js";
 
 const router = express.Router();
-const upload = multer({ dest: "uploads/" });
+
+// ✅ File validation — only PDF, max 5MB
+const upload = multer({
+  dest: "uploads/",
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype !== "application/pdf") {
+      return cb(new Error("Only PDF files are allowed!"), false);
+    }
+    cb(null, true);
+  },
+});
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-router.post("/analyze", protect, upload.single("resume"), async (req, res) => {
+// ✅ Helper to safely delete uploaded file
+const cleanupFile = (filePath) => {
   try {
-    const { jobRole } = req.body;
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch (e) {
+    console.error("File cleanup error:", e.message);
+  }
+};
 
-    const pdfBuffer = fs.readFileSync(req.file.path);
-    const base64PDF = pdfBuffer.toString("base64");
+router.post(
+  "/analyze",
+  protect,
+  (req, res, next) => {
+    upload.single("resume")(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res
+            .status(400)
+            .json({ message: "File too large! Max size is 5MB." });
+        }
+        return res.status(400).json({ message: err.message });
+      } else if (err) {
+        return res.status(400).json({ message: err.message });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    const filePath = req.file?.path;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+    try {
+      // ✅ Validate inputs
+      if (!req.file) {
+        return res.status(400).json({ message: "Please upload a PDF file!" });
+      }
 
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: "application/pdf",
-          data: base64PDF,
+      const { jobRole } = req.body;
+      if (!jobRole || jobRole.trim().length < 2) {
+        cleanupFile(filePath);
+        return res
+          .status(400)
+          .json({ message: "Please enter a valid job role!" });
+      }
+
+      if (jobRole.trim().length > 100) {
+        cleanupFile(filePath);
+        return res.status(400).json({ message: "Job role is too long!" });
+      }
+
+      // ✅ Read PDF
+      const pdfBuffer = fs.readFileSync(filePath);
+      const base64PDF = pdfBuffer.toString("base64");
+
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash-lite",
+      });
+
+      const result = await model.generateContent([
+        {
+          inlineData: {
+            mimeType: "application/pdf",
+            data: base64PDF,
+          },
         },
-      },
-      {
-        text: `You are an expert resume analyzer and career coach.
-        Analyze this resume for the role of "${jobRole}".
+        {
+          text: `You are an expert resume analyzer and career coach.
+        Analyze this resume for the role of "${jobRole.trim()}".
         Return ONLY a valid JSON object with no extra text, no markdown, no backticks.
         Use exactly this structure:
         {
@@ -52,36 +115,77 @@ router.post("/analyze", protect, upload.single("resume"), async (req, res) => {
             "Question 5 based on this resume and ${jobRole} role"
           ]
         }`,
-      },
-    ]);
+        },
+      ]);
 
-    const raw = result.response.text();
-    const cleaned = raw.replace(/```json|```/g, "").trim();
-    const analysis = JSON.parse(cleaned);
+      // ✅ Safe JSON parse
+      const raw = result.response.text();
+      const cleaned = raw.replace(/```json|```/g, "").trim();
 
-    const saved = await Analysis.create({
-      userId: req.user.id,
-      fileName: req.file.originalname,
-      jobRole,
-      ...analysis,
-    });
+      let analysis;
+      try {
+        analysis = JSON.parse(cleaned);
+      } catch {
+        cleanupFile(filePath);
+        return res
+          .status(500)
+          .json({ message: "AI response was invalid. Please try again." });
+      }
 
-    fs.unlinkSync(req.file.path);
-    res.json(saved);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Analysis failed", error: err.message });
-  }
-});
+      // ✅ Validate AI response has required fields
+      if (typeof analysis.score !== "number" || !analysis.label) {
+        cleanupFile(filePath);
+        return res
+          .status(500)
+          .json({ message: "AI returned incomplete data. Please try again." });
+      }
+
+      const saved = await Analysis.create({
+        userId: req.user.id,
+        fileName: req.file.originalname,
+        jobRole: jobRole.trim(),
+        ...analysis,
+      });
+
+      cleanupFile(filePath);
+      res.json(saved);
+    } catch (err) {
+      cleanupFile(filePath);
+      console.error("Analysis error:", err.message);
+
+      // ✅ User-friendly error messages
+      if (err.message?.includes("429")) {
+        return res.status(429).json({
+          message: "AI is busy right now. Please wait a moment and try again.",
+        });
+      }
+      if (err.message?.includes("API key")) {
+        return res.status(500).json({
+          message: "AI service configuration error. Please contact support.",
+        });
+      }
+
+      res.status(500).json({ message: "Analysis failed. Please try again." });
+    }
+  },
+);
 
 router.get("/history", protect, async (req, res) => {
   try {
-    const history = await Analysis.find({ userId: req.user.id }).sort({
-      createdAt: -1,
-    });
-    res.json(history);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const history = await Analysis.find({ userId: req.user.id })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Analysis.countDocuments({ userId: req.user.id });
+
+    res.json({ history, total, page, totalPages: Math.ceil(total / limit) });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    res.status(500).json({ message: "Failed to fetch history" });
   }
 });
 
